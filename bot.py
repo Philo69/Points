@@ -6,7 +6,7 @@ import logging
 # Set up logging to monitor the bot's behavior
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG  # Set to DEBUG to get more detailed logs
 )
 
 # Connect to or create the database
@@ -52,10 +52,18 @@ def get_main_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Start command with inline buttons
+# Start command with welcome message and inline buttons
 async def start(update: Update, context: CallbackContext) -> None:
+    logging.info(f"Received /start command from user: {update.message.from_user.id}")
+    
+    welcome_message = (
+        "👋 Welcome to the Points Bot!\n\n"
+        "You can give points to users by replying with the word 'Pro' to their messages.\n\n"
+        "Use the buttons below to see your points or learn more about the developer."
+    )
+    
     await update.message.reply_text(
-        'Hi! Use the buttons below to learn more.',
+        welcome_message,
         reply_markup=get_main_keyboard()  # Show inline buttons
     )
 
@@ -65,6 +73,7 @@ async def points_command(update: Update, context: CallbackContext) -> None:
     username = update.message.from_user.username or update.message.from_user.first_name
     
     points = get_points(user_id)
+    logging.info(f"Sending points to user: {username} ({user_id})")
     await update.message.reply_text(f'{username}, you have {points} points.')
 
 # Handle callback queries from inline buttons (like "Points" button)
@@ -76,10 +85,12 @@ async def handle_callback_query(update: Update, context: CallbackContext) -> Non
         user_id = query.from_user.id
         username = query.from_user.username or query.from_user.first_name
         points = get_points(user_id)
+        logging.info(f"Points button clicked by user: {username} ({user_id})")
         await query.edit_message_text(f'{username}, you have {points} points.')
 
 # Function to handle messages and give points
 async def handle_message(update: Update, context: CallbackContext) -> None:
+    logging.info(f"Received message: {update.message.text} from user: {update.message.from_user.id}")
     message_text = update.message.text
     if "Pro" in message_text and update.message.reply_to_message:
         original_message_user = update.message.reply_to_message.from_user
@@ -88,12 +99,14 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         
         add_point(user_id, username)
         points = get_points(user_id)
+        logging.info(f"{username} got +1 Point. Total points: {points}")
         await update.message.reply_text(f'{username} got +1 Point ⭐! Total points: {points}')
 
 # Welcome new members
 async def welcome(update: Update, context: CallbackContext):
     new_members = update.message.new_chat_members
     for member in new_members:
+        logging.info(f"New member joined: {member.full_name}")
         await update.message.reply_text(f"Welcome {member.full_name}! 🎉")
 
 # Log all updates to troubleshoot
