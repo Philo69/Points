@@ -1,6 +1,13 @@
 import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import logging
+
+# Set up logging to log issues and errors
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 
 # Connect to or create the database
 conn = sqlite3.connect('points.db')
@@ -74,11 +81,17 @@ async def main():
     # Register message handler to catch text messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
+    # Log startup message
+    logging.info("Bot started successfully.")
+    
     # Run the bot using the current running event loop
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    await application.updater.idle()
+    try:
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        await application.updater.idle()
+    except asyncio.CancelledError:
+        logging.info("Polling was cancelled, shutting down gracefully.")
 
 # Check if there's an existing event loop running
 if __name__ == '__main__':
