@@ -1,6 +1,6 @@
 import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, CallbackQueryHandler
 import logging
 
 # Set up logging to monitor the bot's behavior
@@ -112,14 +112,16 @@ async def main():
     application.add_handler(CommandHandler("points", points_command))
 
     # Register callback handler for inline buttons
-    application.add_handler(MessageHandler(filters.ALL, log_updates))
+    application.add_handler(CallbackQueryHandler(handle_callback_query))
 
     # Register message handler to catch text messages and award points
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Register handler for inline button callbacks
+    # Register welcome message handler when new members join
     application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
-    application.add_handler(CallbackContext, handle_callback_query)
+
+    # Log updates for troubleshooting
+    application.add_handler(MessageHandler(filters.ALL, log_updates))
 
     # Log startup message
     logging.info("Bot started successfully.")
