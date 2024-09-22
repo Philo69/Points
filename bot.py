@@ -115,8 +115,8 @@ async def log_updates(update: Update, context: CallbackContext):
 
 # Main function to start the bot
 async def main():
-    # Replace 'YOUR_TOKEN' with your actual Telegram bot token
-    application = Application.builder().token("7913432029:AAF0I1TWqzIqhz5Gv19xV_2JcW0YYkzaX5Q").build()
+    # Using the new bot token
+    application = Application.builder().token("7913432029:AAGnFVTL6gFl0wySDLIp5_Kp30w3HUUZscE").build()
 
     # Register command handler for /start
     application.add_handler(CommandHandler("start", start))
@@ -136,14 +136,17 @@ async def main():
     # Log updates for troubleshooting
     application.add_handler(MessageHandler(filters.ALL, log_updates))
 
-    # Log startup message
+    # Ensure that polling runs correctly, and handle any cancellations gracefully
     logging.info("Bot started successfully.")
     
-    # Run the bot
-    await application.initialize()
-    await application.start()
-    await application.updater.start_polling()
-    await application.updater.idle()
+    try:
+        # Run the bot
+        await application.initialize()
+        await application.start()
+        await application.updater.start_polling()
+        await application.updater.idle()
+    except asyncio.CancelledError:
+        logging.error("Polling cancelled. Exiting.")
 
 # Check if there's an existing event loop running
 if __name__ == '__main__':
