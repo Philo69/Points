@@ -1,6 +1,7 @@
 import sqlite3
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+import asyncio
 
 # Connect to or create the database
 conn = sqlite3.connect('points.db')
@@ -62,7 +63,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
 
 # Main function to start the bot
 async def main():
-    # Use the provided bot token
+    # Replace 'YOUR_TOKEN' with your actual Telegram bot token
     application = Application.builder().token("7913432029:AAF0I1TWqzIqhz5Gv19xV_2JcW0YYkzaX5Q").build()
 
     # Register command handler for /start
@@ -75,9 +76,16 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Start polling the bot
+    await application.initialize()
     application.run_polling()
 
+# Check if there's an existing event loop running
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
-  
+    try:
+        # Try to run the bot within an already running event loop
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # No event loop running
+        asyncio.run(main())
+    else:
+        # If there's already a running event loop, use it
+        loop.create_task(main())
