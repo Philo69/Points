@@ -59,7 +59,7 @@ def handle_message(update: Update, context: CallbackContext) -> None:
         update.message.reply_text(f'{username} got +1 Point ⭐! Total points: {points}')
 
 def main():
-    updater = Updater("YOUR_TOKEN", use_context=True)
+    updater = Updater("7913432029:AAF0I1TWqzIqhz5Gv19xV_2JcW0YYkzaX5Q", use_context=True)
     dp = updater.dispatcher
 
     dp.add_handler(CommandHandler("start", start))
