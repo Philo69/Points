@@ -17,9 +17,11 @@ def add_point(user_id, username):
     result = c.fetchone()
 
     if result is None:
+        # If user not in DB, add them
         c.execute("INSERT INTO user_points (user_id, username, points) VALUES (?, ?, ?)", 
                   (user_id, username, 1))
     else:
+        # Update points for existing user
         current_points = result[0]
         c.execute("UPDATE user_points SET points = ? WHERE user_id = ?", 
                   (current_points + 1, user_id))
@@ -60,7 +62,7 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
 
 # Main function to start the bot
 async def main():
-    # Replace 'YOUR_TOKEN' with your actual Telegram bot token
+    # Use the provided bot token
     application = Application.builder().token("7913432029:AAF0I1TWqzIqhz5Gv19xV_2JcW0YYkzaX5Q").build()
 
     # Register command handler for /start
@@ -72,8 +74,8 @@ async def main():
     # Register message handler to catch text messages
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Start the Bot
-    await application.start_polling()
+    # Start polling the bot
+    application.run_polling()
 
 if __name__ == '__main__':
     import asyncio
