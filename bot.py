@@ -1,9 +1,9 @@
 import sqlite3
-from telegram import Update
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
 import logging
 
-# Set up logging to log issues and errors
+# Set up logging to monitor the bot's behavior
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -42,22 +42,45 @@ def get_points(user_id):
         return 0
     return result[0]
 
-# Start command
+# Inline keyboard with "Developer" and "Points" buttons
+def get_main_keyboard():
+    keyboard = [
+        [
+            InlineKeyboardButton("Developer", url="https://t.me/TechPiro"),  # Link to your Telegram ID
+            InlineKeyboardButton("Points", callback_data="points")  # Inline button for points
+        ]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+# Start command with inline buttons
 async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text('Hi! Reply with "Pro" to give points to the user you are replying to!')
+    await update.message.reply_text(
+        'Hi! Use the buttons below to learn more.',
+        reply_markup=get_main_keyboard()  # Show inline buttons
+    )
 
 # Points command to check user's points
-async def points(update: Update, context: CallbackContext) -> None:
+async def points_command(update: Update, context: CallbackContext) -> None:
     user_id = update.message.from_user.id
     username = update.message.from_user.username or update.message.from_user.first_name
     
     points = get_points(user_id)
     await update.message.reply_text(f'{username}, you have {points} points.')
 
-# Function to handle messages
+# Handle callback queries from inline buttons (like "Points" button)
+async def handle_callback_query(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "points":
+        user_id = query.from_user.id
+        username = query.from_user.username or query.from_user.first_name
+        points = get_points(user_id)
+        await query.edit_message_text(f'{username}, you have {points} points.')
+
+# Function to handle messages and give points
 async def handle_message(update: Update, context: CallbackContext) -> None:
     message_text = update.message.text
-    
     if "Pro" in message_text and update.message.reply_to_message:
         original_message_user = update.message.reply_to_message.from_user
         user_id = original_message_user.id
@@ -66,6 +89,16 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
         add_point(user_id, username)
         points = get_points(user_id)
         await update.message.reply_text(f'{username} got +1 Point ⭐! Total points: {points}')
+
+# Welcome new members
+async def welcome(update: Update, context: CallbackContext):
+    new_members = update.message.new_chat_members
+    for member in new_members:
+        await update.message.reply_text(f"Welcome {member.full_name}! 🎉")
+
+# Log all updates to troubleshoot
+async def log_updates(update: Update, context: CallbackContext):
+    logging.info(f"Received update: {update}")
 
 # Main function to start the bot
 async def main():
@@ -76,22 +109,26 @@ async def main():
     application.add_handler(CommandHandler("start", start))
 
     # Register command handler for /points
-    application.add_handler(CommandHandler("points", points))
+    application.add_handler(CommandHandler("points", points_command))
 
-    # Register message handler to catch text messages
+    # Register callback handler for inline buttons
+    application.add_handler(MessageHandler(filters.ALL, log_updates))
+
+    # Register message handler to catch text messages and award points
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    # Register handler for inline button callbacks
+    application.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome))
+    application.add_handler(CallbackContext, handle_callback_query)
 
     # Log startup message
     logging.info("Bot started successfully.")
     
-    # Run the bot using the current running event loop
-    try:
-        await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        await application.updater.idle()
-    except asyncio.CancelledError:
-        logging.info("Polling was cancelled, shutting down gracefully.")
+    # Run the bot
+    await application.initialize()
+    await application.start()
+    await application.updater.start_polling()
+    await application.updater.idle()
 
 # Check if there's an existing event loop running
 if __name__ == '__main__':
