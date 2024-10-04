@@ -172,7 +172,7 @@ async def log_updates(update: Update, context: CallbackContext):
 # Main function to start the bot
 async def main():
     # Directly provide the bot token
-    BOT_TOKEN = "7779270006:AAGv9k2TRc5C8b74GSqHrj3ApAPqZZ7k1Jk"  # <-- Add your Telegram bot token here
+    BOT_TOKEN = "7779270006:AAHL1jkC3jyEMI7TaBy21ypLMmicGYhLYs0"  # <-- Add your Telegram bot token here
 
     if not BOT_TOKEN:
         raise ValueError("No Bot Token provided!")
@@ -195,9 +195,7 @@ async def main():
     try:
         # Start polling and handle cancellations gracefully
         await application.initialize()
-        await application.start()
-        await application.updater.start_polling()
-        await application.updater.idle()
+        application.run_polling()  # No need for idle() anymore in newer versions
     except asyncio.CancelledError:
         logging.info("Polling task was cancelled. Exiting gracefully.")
     except Exception as e:
