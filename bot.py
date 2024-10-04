@@ -173,7 +173,7 @@ async def log_updates(update: Update, context: CallbackContext):
 # Main function to start the bot
 async def main():
     # Using environment variable for bot token
-    BOT_TOKEN = os.getenv("BOT_TOKEN")
+    BOT_TOKEN = os.getenv("7779270006:AAErZzTdqU7OeWA5afryHzMKXSVsW9SkX7w")
 
     if not BOT_TOKEN:
         raise ValueError("No Bot Token provided!")
