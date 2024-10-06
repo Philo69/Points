@@ -3,9 +3,10 @@ import random
 from pymongo import MongoClient
 from datetime import datetime, timedelta
 from threading import Timer
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Replace with your actual bot API token and Telegram channel ID
-API_TOKEN = "7825167784:AAH4I6FpeF4ATOZotfwCZBsgmdoeKtpvKBo"
+API_TOKEN = "7825167784:AAG_xMM7m3wwHm7JkAztfj3HEhl7gQkH6C8"
 BOT_OWNER_ID = 7222795580  # Replace with the owner’s Telegram ID
 CHANNEL_ID = -1002438449944  # Replace with your Telegram channel ID where characters are logged
 
@@ -71,7 +72,7 @@ def get_group_data(group_id):
 def update_group_data(group_id, update_data):
     groups_collection.update_one({'group_id': group_id}, {'$set': update_data})
 
-# /start command to welcome users and show the help message
+# /start command with inline button for developer link
 @bot.message_handler(commands=['start'])
 def start_command(message):
     welcome_message = """
@@ -79,12 +80,41 @@ def start_command(message):
 
 🎮 Ready to dive into the world of anime characters? Let’s start collecting and guessing!
 
-Incline developer: <a href="https://t.me/TechPiro">@TechPiro</a>
-
 🝮︎︎︎︎︎︎︎ Use the commands below to explore all the features!
 """
-    bot.send_message(message.chat.id, welcome_message, parse_mode='HTML')
+    # Creating an inline button for developer link
+    markup = InlineKeyboardMarkup()
+    developer_button = InlineKeyboardButton(text="Incline Developer", url="https://t.me/FlashShine")
+    markup.add(developer_button)
+
+    bot.send_message(message.chat.id, welcome_message, parse_mode='HTML', reply_markup=markup)
     show_help(message)
+
+# /help command to show available commands in a structured order
+@bot.message_handler(commands=['help'])
+def show_help(message):
+    help_text = """
+<b>📜 🝮︎︎︎︎︎︎︎ Available Commands 🝮︎︎︎︎︎︎︎ 📜</b>
+
+🎮 <b>Character Commands:</b>
+/bonus - Claim your daily bonus 🝮︎︎︎︎︎︎︎
+/inventory - View your character inventory 🝮︎︎︎︎︎︎︎
+/gift - Gift coins to another user by tagging them 🝮︎︎︎︎︎︎︎
+/profile - Show your personal stats (rank, coins, guesses, etc.) 🝮︎︎︎︎︎︎︎
+
+🏆 <b>Leaderboards:</b>
+/leaderboard - Show the top 10 users by coins 🝮︎︎︎︎︎︎︎
+/topcoins - Show the top 10 users by coins earned today 🝮︎︎︎︎︎︎︎
+
+📊 <b>Bot Stats:</b>
+/stats - Show the bot's stats (total users, characters, groups) 🝮︎︎︎︎︎︎︎
+
+ℹ️ <b>Miscellaneous:</b>
+/help - Show this help message 🝮︎︎︎︎︎︎︎
+
+🝮︎︎︎︎︎︎︎ Have fun and start collecting! 🝮︎︎︎︎︎︎︎
+"""
+    bot.reply_to(message, help_text, parse_mode='HTML')
 
 # /bonus command to claim daily bonus and send reminder for next claim
 @bot.message_handler(commands=['bonus'])
@@ -114,47 +144,34 @@ def claim_bonus(message):
     
     bot.reply_to(message, f"🎁 You've claimed your daily bonus of {BONUS_COINS} coins! 🝮︎︎︎︎︎︎︎")
 
-# /gift command to gift coins to another user by tagging them
-@bot.message_handler(commands=['gift'])
-def gift_coins(message):
-    if not message.reply_to_message:
-        bot.reply_to(message, "❌ You need to reply to a user to gift coins.")
-        return
+# Fix character fetching and sending
+def send_character(chat_id):
+    global current_character
+    current_character = fetch_new_character()
+    if current_character:
+        rarity = current_character['rarity']
+        caption = (
+            f"🎨 Guess the Anime Character!\n\n"
+            f"💬 Name: ???\n"
+            f"⚔️ Rarity: {rarity}\n"
+        )
+        try:
+            bot.send_photo(chat_id, current_character['image_url'], caption=caption)
+        except Exception as e:
+            print(f"Error sending character image: {e}")
+            bot.send_message(chat_id, "❌ Unable to send character image.")
 
-    try:
-        parts = message.text.split()
-        amount = int(parts[1])
-        if amount <= 0:
-            bot.reply_to(message, "❌ The amount of coins must be greater than 0.")
-            return
-    except (IndexError, ValueError):
-        bot.reply_to(message, "❌ Incorrect format. Use /gift <amount> while replying to a user.")
-        return
+# Fetch a new character from the database
+def fetch_new_character():
+    characters = get_character_data()
+    if characters:
+        return random.choice(characters)
+    return None
 
-    sender_id = message.from_user.id
-    receiver_id = message.reply_to_message.from_user.id
+def get_character_data():
+    return list(characters_collection.find())
 
-    if sender_id == receiver_id:
-        bot.reply_to(message, "❌ You cannot gift coins to yourself.")
-        return
-
-    sender = get_user_data(sender_id)
-    receiver = get_user_data(receiver_id)
-
-    if sender['coins'] < amount:
-        bot.reply_to(message, "❌ You do not have enough coins to gift.")
-        return
-
-    # Transfer coins
-    sender['coins'] -= amount
-    receiver['coins'] += amount
-
-    update_user_data(sender_id, sender)
-    update_user_data(receiver_id, receiver)
-
-    bot.reply_to(message, f"✅ You successfully gifted {amount} coins to {message.reply_to_message.from_user.first_name}! 🝮︎︎︎︎︎︎︎")
-
-# Fix /leaderboard command to show top users by coins
+# /leaderboard command to show top users by coins
 @bot.message_handler(commands=['leaderboard'])
 def leaderboard(message):
     top_users = users_collection.find().sort("coins", -1).limit(10)
@@ -173,7 +190,7 @@ def leaderboard(message):
 
     bot.reply_to(message, leaderboard_message, parse_mode='Markdown')
 
-# Fix /topcoins command to show users with the most coins earned today
+# /topcoins command to show users with the most coins earned today
 @bot.message_handler(commands=['topcoins'])
 def topcoins(message):
     start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -193,23 +210,6 @@ def topcoins(message):
         topcoins_message += f"{index}. {profile_mention} — {user['coins']} coins 🝮︎︎︎︎︎︎︎\n"
 
     bot.reply_to(message, topcoins_message, parse_mode='Markdown')
-
-# /help command to show available commands
-@bot.message_handler(commands=['help'])
-def show_help(message):
-    help_text = """
-<b>📜 🝮︎︎︎︎︎︎︎ Available Commands 🝮︎︎︎︎︎︎︎ 📜</b>
-
-/help - Show this help message
-/inventory - View your character inventory
-/leaderboard - Show the top 10 users by coins 🝮︎︎︎︎︎︎︎
-/bonus - Claim your daily bonus 🝮︎︎︎︎︎︎︎
-/gift - Gift coins to another user by tagging them
-/topcoins - Show the top 10 users by coins earned today 🝮︎︎︎︎︎︎︎
-/profile - Show your personal stats (rank, coins, guesses, etc.)
-/stats - Show the bot's stats (total users, characters, groups)
-"""
-    bot.reply_to(message, help_text, parse_mode='HTML')
 
 # /profile command to show user's rank, total users, and personal stats
 @bot.message_handler(commands=['profile'])
