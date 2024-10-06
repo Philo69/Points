@@ -2,7 +2,6 @@ import telebot
 import random
 from pymongo import MongoClient
 from datetime import datetime, timedelta
-from threading import Timer
 
 # Replace with your actual bot API token and Telegram channel ID
 API_TOKEN = "7825167784:AAE_RWgBipKQJIYS9TedQLsOEoFacKnDB4w"
@@ -47,7 +46,7 @@ def get_user_data(user_id):
             'last_bonus': None,
             'streak': 0,
             'profile': None,
-            'username': None
+            'title': 'No Title'
         }
         users_collection.insert_one(new_user)
         return new_user
@@ -70,6 +69,70 @@ def get_group_data(group_id):
 
 def update_group_data(group_id, update_data):
     groups_collection.update_one({'group_id': group_id}, {'$set': update_data})
+
+# /title command to set a custom user title
+@bot.message_handler(commands=['title'])
+def set_title(message):
+    user_id = message.from_user.id
+    title = message.text.replace('/title', '').strip()
+
+    if len(title) == 0:
+        bot.reply_to(message, "❌ You need to specify a title. Example: /title The Grandmaster")
+        return
+
+    if len(title) > 30:
+        bot.reply_to(message, "❌ Title is too long. Please keep it under 30 characters.")
+        return
+
+    user = get_user_data(user_id)
+    update_user_data(user_id, {'title': title})
+
+    bot.reply_to(message, f"✅ Your title has been set to: <b>{title}</b>", parse_mode='HTML')
+
+# /leaderboard command to show top users by coins with title and mention using {Mention}
+@bot.message_handler(commands=['leaderboard'])
+def leaderboard(message):
+    top_users = users_collection.find().sort("coins", -1).limit(10)
+    leaderboard_message = "<b>🏆 Top 10 Users by Coins 🏆</b>\n\n"
+    
+    for index, user in enumerate(top_users, start=1):
+        title = user.get('title', 'No Title')
+        profile_name = user.get('profile', 'Unknown User')
+        telegram_username = user.get('username', None)
+
+        if telegram_username:
+            # Use Telegram mention format with @username
+            profile_mention = f"[{profile_name}](tg://user?id={user['user_id']})"
+        else:
+            # If no username, display the profile name only
+            profile_mention = profile_name
+
+        leaderboard_message += f"{index}. {profile_mention} ({title}) — {user['coins']} coins\n"
+    
+    bot.reply_to(message, leaderboard_message, parse_mode='Markdown')
+
+# /topcoins command to show users with the most coins earned today with title and mention
+@bot.message_handler(commands=['topcoins'])
+def topcoins(message):
+    start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+    top_users_today = users_collection.find({"last_bonus": {"$gte": start_of_day.strftime('%Y-%m-%d %H:%M:%S')}}).sort("coins", -1).limit(10)
+
+    topcoins_message = "<b>🌟 Top 10 Users by Coins Earned Today 🌟</b>\n\n"
+    
+    for index, user in enumerate(top_users_today, start=1):
+        title = user.get('title', 'No Title')
+        profile_name = user.get('profile', 'Unknown User')
+        telegram_username = user.get('username', None)
+
+        if telegram_username:
+            # Use Telegram mention format with @username
+            profile_mention = f"[{profile_name}](tg://user?id={user['user_id']})"
+        else:
+            profile_mention = profile_name
+
+        topcoins_message += f"{index}. {profile_mention} ({title}) — {user['coins']} coins\n"
+    
+    bot.reply_to(message, topcoins_message, parse_mode='Markdown')
 
 # Add send_character function to send characters
 def send_character(chat_id):
@@ -98,7 +161,52 @@ def fetch_new_character():
 def get_character_data():
     return list(characters_collection.find())
 
-# /inventory command to show the user's characters grouped by rarity
+# /profile command to show user's rank, total users, and personal stats
+@bot.message_handler(commands=['profile'])
+def show_profile(message):
+    user_id = message.from_user.id
+    user = get_user_data(user_id)
+
+    if not user:
+        bot.reply_to(message, "❌ User not found.")
+        return
+
+    streak = user.get('streak', 0)
+    coins = user.get('coins', 0)
+    correct_guesses = user.get('correct_guesses', 0)
+
+    # Total number of users
+    total_users = users_collection.count_documents({})
+
+    # Rank the user based on their coins
+    rank = users_collection.count_documents({"coins": {"$gt": coins}}) + 1
+
+    profile_message = f"""
+<b>📊 Your Profile:</b>
+- 💰 Coins: {coins}
+- 🔥 Streak: {streak}
+- 🎯 Correct Guesses: {correct_guesses}
+- 🏅 Rank: {rank} / {total_users} users
+"""
+    bot.reply_to(message, profile_message, parse_mode='HTML')
+
+# /stats command to show bot's stats (total users, characters, groups, etc.)
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    # Total users, characters, and group stats
+    total_users = users_collection.count_documents({})
+    total_characters = characters_collection.count_documents({})
+    total_groups = groups_collection.count_documents({})
+
+    stats_message = f"""
+<b>📊 Bot Stats:</b>
+- 🧑‍🤝‍🧑 Total Users: {total_users}
+- 🎎 Total Characters: {total_characters}
+- 👥 Total Groups: {total_groups}
+"""
+    bot.reply_to(message, stats_message, parse_mode='HTML')
+
+# /inventory command to show the user's characters grouped by rarity with pagination
 @bot.message_handler(commands=['inventory'])
 def show_inventory(message):
     user_id = message.from_user.id
