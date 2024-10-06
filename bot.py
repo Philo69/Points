@@ -6,7 +6,7 @@ from threading import Timer
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Replace with your actual bot API token and Telegram channel ID
-API_TOKEN = "7825167784:AAG_xMM7m3wwHm7JkAztfj3HEhl7gQkH6C8"
+API_TOKEN = "7825167784:AAGSuh-tlImyH3_Zwp5Ehb0LiBDXLlLBGjg"
 BOT_OWNER_ID = 7222795580  # Replace with the owner’s Telegram ID
 CHANNEL_ID = -1002438449944  # Replace with your Telegram channel ID where characters are logged
 
@@ -35,6 +35,18 @@ MESSAGE_THRESHOLD = 5  # Number of messages before sending a new character
 current_character = None
 global_message_count = 0  # Global counter for messages in all chats
 REMINDER_INTERVAL = 24 * 60 * 60  # 24 hours for reminder
+
+# Define valid rarities with your unique emojis
+RARITY_EMOJIS = {
+    'Common': '🌟',       # Emoji for Common
+    'Rare': '🏮',         # Emoji for Rare
+    'Epic': '🧿',         # Emoji for Epic
+    'Legendary': '🔮'     # Emoji for Legendary
+}
+VALID_RARITIES = list(RARITY_EMOJIS.keys())  # ['Common', 'Rare', 'Epic', 'Legendary']
+
+# Define sudo (admin) users (including bot owner)
+sudo_users = [6180999156, 7222795580]  # Added your admin user IDs
 
 # Helper Functions
 def get_user_data(user_id):
@@ -72,49 +84,80 @@ def get_group_data(group_id):
 def update_group_data(group_id, update_data):
     groups_collection.update_one({'group_id': group_id}, {'$set': update_data})
 
-# /start command with inline button for developer link
-@bot.message_handler(commands=['start'])
-def start_command(message):
-    welcome_message = """
-<b>🝮︎︎︎︎︎︎︎ Welcome to Pʜɪʟᴏ 🝮︎︎︎︎︎︎︎ Gʀᴀʙʙᴇʀ 🝮︎︎︎︎︎︎︎</b>
+# /upload command to add new characters to the database with rarity validation and emojis
+@bot.message_handler(commands=['upload'])
+def upload_character(message):
+    user_id = message.from_user.id
 
-🎮 Ready to dive into the world of anime characters? Let’s start collecting and guessing!
+    # Check if the user is the owner or a sudo user
+    if user_id != BOT_OWNER_ID and user_id not in sudo_users:
+        bot.reply_to(message, "❌ You do not have permission to upload characters.")
+        return
 
-🝮︎︎︎︎︎︎︎ Use the commands below to explore all the features!
-"""
-    # Creating an inline button for developer link
-    markup = InlineKeyboardMarkup()
-    developer_button = InlineKeyboardButton(text="Incline Developer", url="https://t.me/FlashShine")
-    markup.add(developer_button)
+    try:
+        # Expecting the format: /upload <character_name> <image_url> <rarity>
+        parts = message.text.split(maxsplit=3)
+        if len(parts) < 4:
+            bot.reply_to(message, "❌ Incorrect format. Use /upload <character_name> <image_url> <rarity>")
+            return
 
-    bot.send_message(message.chat.id, welcome_message, parse_mode='HTML', reply_markup=markup)
-    show_help(message)
+        character_name = parts[1]
+        image_url = parts[2]
+        rarity = parts[3].capitalize()  # Capitalize rarity input to ensure case-insensitivity
 
-# /help command to show available commands in a structured order
-@bot.message_handler(commands=['help'])
-def show_help(message):
-    help_text = """
-<b>📜 🝮︎︎︎︎︎︎︎ Available Commands 🝮︎︎︎︎︎︎︎ 📜</b>
+        # Check if rarity is valid
+        if rarity not in VALID_RARITIES:
+            bot.reply_to(message, f"❌ Invalid rarity. Please choose from: {', '.join(VALID_RARITIES)}")
+            return
 
-🎮 <b>Character Commands:</b>
-/bonus - Claim your daily bonus 🝮︎︎︎︎︎︎︎
-/inventory - View your character inventory 🝮︎︎︎︎︎︎︎
-/gift - Gift coins to another user by tagging them 🝮︎︎︎︎︎︎︎
-/profile - Show your personal stats (rank, coins, guesses, etc.) 🝮︎︎︎︎︎︎︎
+        # Check if character already exists
+        existing_character = characters_collection.find_one({'character_name': character_name})
+        if existing_character:
+            bot.reply_to(message, "❌ A character with this name already exists in the database.")
+            return
 
-🏆 <b>Leaderboards:</b>
-/leaderboard - Show the top 10 users by coins 🝮︎︎︎︎︎︎︎
-/topcoins - Show the top 10 users by coins earned today 🝮︎︎︎︎︎︎︎
+        # Insert the new character into the database
+        new_character = {
+            'character_name': character_name,
+            'image_url': image_url,
+            'rarity': rarity
+        }
+        characters_collection.insert_one(new_character)
+        emoji = RARITY_EMOJIS[rarity]
+        bot.reply_to(message, f"✅ Successfully uploaded character: {character_name} {emoji} (Rarity: {rarity}) 🝮︎︎︎︎︎︎︎")
 
-📊 <b>Bot Stats:</b>
-/stats - Show the bot's stats (total users, characters, groups) 🝮︎︎︎︎︎︎︎
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error occurred: {str(e)}")
 
-ℹ️ <b>Miscellaneous:</b>
-/help - Show this help message 🝮︎︎︎︎︎︎︎
+# /delete command to remove characters from the database, only for sudo users
+@bot.message_handler(commands=['delete'])
+def delete_character(message):
+    user_id = message.from_user.id
+    if user_id != BOT_OWNER_ID and user_id not in sudo_users:
+        bot.reply_to(message, "❌ You do not have permission to delete characters.")
+        return
 
-🝮︎︎︎︎︎︎︎ Have fun and start collecting! 🝮︎︎︎︎︎︎︎
-"""
-    bot.reply_to(message, help_text, parse_mode='HTML')
+    try:
+        # Expecting the format: /delete <character_name>
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            bot.reply_to(message, "❌ Incorrect format. Use /delete <character_name>")
+            return
+
+        character_name = parts[1]
+
+        # Check if character exists
+        character = characters_collection.find_one({'character_name': character_name})
+        if not character:
+            bot.reply_to(message, "❌ No character with this name exists.")
+            return
+
+        # Delete the character from the database
+        characters_collection.delete_one({'character_name': character_name})
+        bot.reply_to(message, f"✅ Successfully deleted character: {character_name} 🝮︎︎︎︎︎︎︎")
+
+    except Exception as e:
+        bot.reply_to(message, f"❌ Error occurred: {str(e)}")
 
 # /bonus command to claim daily bonus and send reminder for next claim
 @bot.message_handler(commands=['bonus'])
@@ -144,38 +187,55 @@ def claim_bonus(message):
     
     bot.reply_to(message, f"🎁 You've claimed your daily bonus of {BONUS_COINS} coins! 🝮︎︎︎︎︎︎︎")
 
-# Fix character fetching and sending
-def send_character(chat_id):
-    global current_character
-    current_character = fetch_new_character()
-    if current_character:
-        rarity = current_character['rarity']
-        caption = (
-            f"🎨 Guess the Anime Character!\n\n"
-            f"💬 Name: ???\n"
-            f"⚔️ Rarity: {rarity}\n"
-        )
-        try:
-            bot.send_photo(chat_id, current_character['image_url'], caption=caption)
-        except Exception as e:
-            print(f"Error sending character image: {e}")
-            bot.send_message(chat_id, "❌ Unable to send character image.")
+# /gift command to gift coins to another user by tagging them
+@bot.message_handler(commands=['gift'])
+def gift_coins(message):
+    if not message.reply_to_message:
+        bot.reply_to(message, "❌ You need to reply to a user to gift coins.")
+        return
 
-# Fetch a new character from the database
-def fetch_new_character():
-    characters = get_character_data()
-    if characters:
-        return random.choice(characters)
-    return None
+    try:
+        parts = message.text.split()
+        amount = int(parts[1])
+        if amount <= 0:
+            bot.reply_to(message, "❌ The amount of coins must be greater than 0.")
+            return
+    except (IndexError, ValueError):
+        bot.reply_to(message, "❌ Incorrect format. Use /gift <amount> while replying to a user.")
+        return
 
-def get_character_data():
-    return list(characters_collection.find())
+    sender_id = message.from_user.id
+    receiver_id = message.reply_to_message.from_user.id
+
+    if sender_id == receiver_id:
+        bot.reply_to(message, "❌ You cannot gift coins to yourself.")
+        return
+
+    sender = get_user_data(sender_id)
+    receiver = get_user_data(receiver_id)
+
+    if sender['coins'] < amount:
+        bot.reply_to(message, "❌ You do not have enough coins to gift.")
+        return
+
+    # Transfer coins
+    sender['coins'] -= amount
+    receiver['coins'] += amount
+
+    update_user_data(sender_id, sender)
+    update_user_data(receiver_id, receiver)
+
+    bot.reply_to(message, f"✅ You successfully gifted {amount} coins to {message.reply_to_message.from_user.first_name}! 🝮︎︎︎︎︎︎︎")
 
 # /leaderboard command to show top users by coins
 @bot.message_handler(commands=['leaderboard'])
 def leaderboard(message):
     top_users = users_collection.find().sort("coins", -1).limit(10)
     leaderboard_message = "<b>🏆 🝮︎︎︎︎︎︎︎ Top 10 Users by Coins 🝮︎︎︎︎︎︎︎ 🏆</b>\n\n"
+
+    if top_users.count() == 0:
+        bot.reply_to(message, "❌ No users found on the leaderboard.")
+        return
 
     for index, user in enumerate(top_users, start=1):
         profile_name = user.get('profile', 'Unknown User')
@@ -198,6 +258,10 @@ def topcoins(message):
 
     topcoins_message = "<b>🌟 🝮︎︎︎︎︎︎︎ Top 10 Users by Coins Earned Today 🝮︎︎︎︎︎︎︎ 🌟</b>\n\n"
 
+    if top_users_today.count() == 0:
+        bot.reply_to(message, "❌ No users have earned coins today.")
+        return
+
     for index, user in enumerate(top_users_today, start=1):
         profile_name = user.get('profile', 'Unknown User')
         telegram_username = user.get('username', None)
@@ -210,89 +274,6 @@ def topcoins(message):
         topcoins_message += f"{index}. {profile_mention} — {user['coins']} coins 🝮︎︎︎︎︎︎︎\n"
 
     bot.reply_to(message, topcoins_message, parse_mode='Markdown')
-
-# /profile command to show user's rank, total users, and personal stats
-@bot.message_handler(commands=['profile'])
-def show_profile(message):
-    user_id = message.from_user.id
-    user = get_user_data(user_id)
-
-    if not user:
-        bot.reply_to(message, "❌ User not found.")
-        return
-
-    streak = user.get('streak', 0)
-    coins = user.get('coins', 0)
-    correct_guesses = user.get('correct_guesses', 0)
-
-    total_users = users_collection.count_documents({})
-
-    # Rank the user based on their coins
-    rank = users_collection.count_documents({"coins": {"$gt": coins}}) + 1
-
-    profile_message = f"""
-<b>📊 🝮︎︎︎︎︎︎︎ Your Profile 🝮︎︎︎︎︎︎︎:</b>
-- 💰 Coins: {coins}
-- 🔥 Streak: {streak}
-- 🎯 Correct Guesses: {correct_guesses}
-- 🏅 Rank: {rank} / {total_users} users 🝮︎︎︎︎︎︎︎
-"""
-    bot.reply_to(message, profile_message, parse_mode='HTML')
-
-# /stats command to show bot's stats (total users, characters, groups, etc.)
-@bot.message_handler(commands=['stats'])
-def show_stats(message):
-    total_users = users_collection.count_documents({})
-    total_characters = characters_collection.count_documents({})
-    total_groups = groups_collection.count_documents({})
-
-    stats_message = f"""
-<b>📊 🝮︎︎︎︎︎︎︎ Bot Stats 🝮︎︎︎︎︎︎︎:</b>
-- 🧑‍🤝‍🧑 Total Users: {total_users}
-- 🎎 Total Characters: {total_characters}
-- 👥 Total Groups: {total_groups}
-"""
-    bot.reply_to(message, stats_message, parse_mode='HTML')
-
-# Handle all types of messages and increment the message counter
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    global global_message_count
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-
-    if message.chat.type in ['group', 'supergroup']:
-        group_data = get_group_data(chat_id)
-        new_message_count = group_data['message_count'] + 1
-        update_group_data(chat_id, {'message_count': new_message_count})
-
-    user_guess = message.text.strip().lower() if message.text else ""
-
-    global_message_count += 1
-
-    if global_message_count >= MESSAGE_THRESHOLD:
-        send_character(chat_id)
-        global_message_count = 0
-
-    if current_character and user_guess:
-        character_name = current_character['character_name'].strip().lower()
-        if user_guess in character_name:
-            user = get_user_data(user_id)
-            new_coins = user['coins'] + COINS_PER_GUESS
-            user['correct_guesses'] += 1
-            user['streak'] += 1
-            streak_bonus = STREAK_BONUS_COINS * user['streak']
-            update_user_data(user_id, {
-                'coins': new_coins + streak_bonus,
-                'correct_guesses': user['correct_guesses'],
-                'streak': user['streak'],
-                'inventory': user['inventory'] + [current_character]
-            })
-            bot.reply_to(message, f"🎉 Congratulations! You guessed correctly and earned {COINS_PER_GUESS} coins! 🝮︎︎︎︎︎︎︎\n"
-                                  f"🔥 Streak Bonus: {streak_bonus} coins for a {user['streak']}-guess streak! 🝮︎︎︎︎︎︎︎")
-            send_character(chat_id)
-        else:
-            update_user_data(user_id, {'streak': 0})
 
 # Start polling the bot
 print("🝮︎︎︎︎︎︎︎ Bot is running... 🝮︎︎︎︎︎︎︎")
