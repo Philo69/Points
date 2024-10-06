@@ -216,23 +216,17 @@ async def main():
     application.add_handler(CommandHandler("generatekey", generatekey_command))  # Owner command to generate keys
     application.add_handler(CommandHandler("gateway", gateway_command))  # Check Stripe gateway
 
-    # Initialize the bot and start polling for updates
+    # Start polling for updates
     await application.initialize()
+    await application.start()
     await application.run_polling()  # Corrected to run_polling
     
     # Idle to keep the bot running
     await application.idle()
 
-# Check if the event loop is already running
+# Running the bot inside the current event loop without asyncio.run()
 if __name__ == '__main__':
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:  # No event loop running
-        loop = None
-
-    if loop and loop.is_running():
-        # If the loop is already running, just create a task
-        asyncio.ensure_future(main())
-    else:
-        # Otherwise, run the bot normally
-        asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.create_task(main())
+    loop.run_forever()
+    
