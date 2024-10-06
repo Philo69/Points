@@ -6,7 +6,7 @@ import aiosqlite
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 
-# Define the bot owner's user ID
+# Define the bot owner's user ID and bot token
 BOT_OWNER_ID = 7202072688  # Replace with your actual Telegram user ID
 BOT_TOKEN = "7779270006:AAFgPtHaKTaz9SuSkE6WmbUHG_IpKhPMIag"  # Replace this with your actual bot token
 
@@ -215,13 +215,14 @@ async def main():
     application.add_handler(CommandHandler("generatekey", generatekey_command))  # Owner command to generate keys
     application.add_handler(CommandHandler("gateway", gateway_command))  # Check Stripe gateway
 
-    # Start the bot
-    await application.start()
-    await application.process_updates()
-
+    # Initialize the bot and start polling for updates
+    await application.initialize()
+    await application.start_polling()
+    
     # Idle to keep the bot running
     await application.idle()
 
 if __name__ == '__main__':
     import asyncio
     asyncio.run(main())
+            
