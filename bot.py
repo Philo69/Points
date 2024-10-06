@@ -1,5 +1,7 @@
 import logging
-from telegram import Update
+import os
+import requests
+from telegram import Update, InputFile
 from telegram.ext import Application, CommandHandler
 from telegram.constants import ParseMode
 
@@ -13,27 +15,40 @@ logger = logging.getLogger(__name__)
 BOT_TOKEN = '7545754774:AAFLIaaJ8SSskfLsMZZsVEWFA0ZMcNd4DA0'
 OWNER_ID = 7202072688  # Replace with your Telegram user ID (an integer)
 
+# Path to store the downloaded image locally
+local_image_path = 'cached_image.jpg'
+image_url = 'https://files.catbox.moe/okjpvp.jpg'
+
+def download_image(url, path):
+    """Download the image from the URL and save it locally."""
+    if not os.path.exists(path):
+        logger.info(f"Downloading image from {url}...")
+        response = requests.get(url)
+        if response.status_code == 200:
+            with open(path, 'wb') as file:
+                file.write(response.content)
+            logger.info("Image downloaded and saved locally.")
+        else:
+            logger.error(f"Failed to download image: {response.status_code}")
+    else:
+        logger.info("Image already cached locally.")
+
 async def start(update: Update, context) -> None:
     """Handle the /start command with a welcome message and image"""
-    logger.info(f"/start command received from user: {update.effective_user.id}")
     welcome_message = (
         "Welcome to Fʟᴀsʜ 🝮︎︎︎︎︎︎︎ Hᴜɴᴛᴇʀ!\n\n"
         "This bot is developed by [FlashShine](https://t.me/FlashShine)."
     )
-    
-    # URL of the image
-    image_url = 'https://files.catbox.moe/okjpvp.jpg'
-    
-    # Send the image from the URL
-    try:
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url, caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
-        logger.info(f"Image and message sent successfully to user: {update.effective_user.id}")
-    except Exception as e:
-        logger.error(f"Failed to send image or message: {str(e)}")
+
+    # Send the pre-downloaded image from the local file
+    if os.path.exists(local_image_path):
+        with open(local_image_path, 'rb') as image:
+            await context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(image), caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
+    else:
+        await update.message.reply_text("Error: Image not found.")
 
 async def help_command(update: Update, context) -> None:
     """Handle the /help command"""
-    logger.info(f"/help command received from user: {update.effective_user.id}")
     help_message = (
         "🝮︎︎︎︎︎︎︎ Help Menu 🝮︎︎︎︎︎︎︎\n\n"
         "Use /start to get the welcome message and bot details.\n"
@@ -43,6 +58,9 @@ async def help_command(update: Update, context) -> None:
 
 def main():
     """Start the bot"""
+    # Preload the image by downloading it once
+    download_image(image_url, local_image_path)
+
     # Create the application with the bot token
     application = Application.builder().token(BOT_TOKEN).build()
 
