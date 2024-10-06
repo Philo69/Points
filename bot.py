@@ -1,4 +1,4 @@
-from telegram import Update, InputFile
+from telegram import Update
 from telegram.ext import Application, CommandHandler
 from telegram.constants import ParseMode
 
@@ -13,12 +13,11 @@ async def start(update: Update, context) -> None:
         "This bot is developed by [FlashShine](https://t.me/FlashShine)."
     )
     
-    # Path to the image (update with the path where the image is stored)
-    image_path = '/mnt/data/_830eec2b-cb51-4c5c-941a-e97b0151a3c5.jpeg'
+    # URL of the image
+    image_url = 'https://files.catbox.moe/okjpvp.jpg'
     
-    # Send the image
-    with open(image_path, 'rb') as image:
-        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(image), caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
+    # Send the image from the URL
+    await context.bot.send_photo(chat_id=update.effective_chat.id, photo=image_url, caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
 
 async def help_command(update: Update, context) -> None:
     """Handle the /help command"""
