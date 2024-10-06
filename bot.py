@@ -3,6 +3,7 @@ import string
 import requests
 import re
 import aiosqlite
+import asyncio
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
 
@@ -222,6 +223,16 @@ async def main():
     # Idle to keep the bot running
     await application.idle()
 
+# Check if the event loop is already running
 if __name__ == '__main__':
-    import asyncio
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # No event loop running
+        loop = None
+
+    if loop and loop.is_running():
+        # If the loop is already running, just create a task
+        asyncio.ensure_future(main())
+    else:
+        # Otherwise, run the bot normally
+        asyncio.run(main())
