@@ -1,11 +1,12 @@
-from telegram import Update, ParseMode, InputFile
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram import Update, InputFile
+from telegram.ext import Application, CommandHandler
+from telegram.constants import ParseMode
 
 # Set your bot token and owner ID here
 BOT_TOKEN = '7545754774:AAFLIaaJ8SSskfLsMZZsVEWFA0ZMcNd4DA0'
 OWNER_ID = 7202072688  # Replace with your Telegram user ID (an integer)
 
-def start(update: Update, context: CallbackContext) -> None:
+async def start(update: Update, context) -> None:
     """Handle the /start command with a welcome message and image"""
     welcome_message = (
         "Welcome to Fʟᴀsʜ 🝮︎︎︎︎︎︎︎ Hᴜɴᴛᴇʀ!\n\n"
@@ -17,29 +18,28 @@ def start(update: Update, context: CallbackContext) -> None:
     
     # Send the image
     with open(image_path, 'rb') as image:
-        context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(image), caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
+        await context.bot.send_photo(chat_id=update.effective_chat.id, photo=InputFile(image), caption=welcome_message, parse_mode=ParseMode.MARKDOWN)
 
-def help_command(update: Update, context: CallbackContext) -> None:
+async def help_command(update: Update, context) -> None:
     """Handle the /help command"""
     help_message = (
         "🝮︎︎︎︎︎︎︎ Help Menu 🝮︎︎︎︎︎︎︎\n\n"
         "Use /start to get the welcome message and bot details.\n"
         "Use /help to display this help message."
     )
-    update.message.reply_text(help_message)
+    await update.message.reply_text(help_message)
 
 def main():
     """Start the bot"""
-    updater = Updater(BOT_TOKEN, use_context=True)
-    dp = updater.dispatcher
+    # Create the application with the bot token
+    application = Application.builder().token(BOT_TOKEN).build()
 
     # Command handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("help", help_command))
 
-    # Start the bot
-    updater.start_polling()
-    updater.idle()
+    # Start the bot with polling
+    application.run_polling()
 
 if __name__ == '__main__':
     main()
