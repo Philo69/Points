@@ -1,29 +1,23 @@
 import telebot
-import random
 from pymongo import MongoClient
 from datetime import datetime, timedelta
-from threading import Timer
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Replace with your actual bot API token and Telegram channel ID
-API_TOKEN = "7825167784:AAGUq4LvPu5GcIxbUoERCq7TeQ6dGk7AzmY"
+API_TOKEN = "7825167784:AAHnif2V6AVg6BTcqWlG_JXxtw_1VFOGXF4"
 BOT_OWNER_ID = 7222795580  # Replace with the owner’s Telegram ID
 CHANNEL_ID = -1002438449944  # Replace with your Telegram channel ID where characters are logged
 
 # MongoDB Connection
 MONGO_URI = "mongodb+srv://PhiloWise:Philo@waifu.yl9tohm.mongodb.net/?retryWrites=true&w=majority&appName=Waifu"
-try:
-    client = MongoClient(MONGO_URI)
-    db = client['philo_grabber']  # Database name
-    users_collection = db['users']  # Collection for user data
-    characters_collection = db['characters']  # Collection for character data
-    groups_collection = db['groups']  # Collection for group stats
-    print("🝮︎︎︎︎︎︎︎ Connected to MongoDB 🝮︎︎︎︎︎︎︎")
-except Exception as e:
-    print(f"❌ Failed to connect to MongoDB: {e}")
-    exit()  # Exit if connection fails
+client = MongoClient(MONGO_URI)
+db = client['philo_grabber']  # Database name
+users_collection = db['users']  # Collection for user data
+characters_collection = db['characters']  # Collection for character data
 
-# Initialize the bot
+# List of sudo users (user IDs)
+SUDO_USERS = [7222795580, 6180999156]  # Add user IDs of sudo users here
+
 bot = telebot.TeleBot(API_TOKEN)
 
 # Settings
@@ -31,10 +25,16 @@ BONUS_COINS = 50000  # Bonus amount for daily claim
 BONUS_INTERVAL = timedelta(days=1)  # Bonus claim interval (24 hours)
 COINS_PER_GUESS = 50  # Coins for correct guesses
 STREAK_BONUS_COINS = 1000  # Additional coins for continuing a streak
+RARITY_LEVELS = {
+    'Common': '⭐',
+    'Rare': '🌟',
+    'Epic': '💫',
+    'Legendary': '✨'
+}
+RARITY_WEIGHTS = [60, 25, 10, 5]
 MESSAGE_THRESHOLD = 5  # Number of messages before sending a new character
-current_character = None
-global_message_count = 0  # Global counter for messages in all chats
-REMINDER_INTERVAL = 24 * 60 * 60  # 24 hours for reminder
+TOP_LEADERBOARD_LIMIT = 10  # Limit for leaderboard to only show top 10 users
+ITEMS_PER_PAGE = 5  # Number of characters per page in inventory
 
 # Helper Functions
 def get_user_data(user_id):
@@ -47,8 +47,7 @@ def get_user_data(user_id):
             'inventory': [],
             'last_bonus': None,
             'streak': 0,
-            'profile': None,
-            'username': None
+            'profile': None
         }
         users_collection.insert_one(new_user)
         return new_user
@@ -57,24 +56,76 @@ def get_user_data(user_id):
 def update_user_data(user_id, update_data):
     users_collection.update_one({'user_id': user_id}, {'$set': update_data})
 
-def get_group_data(group_id):
-    group = groups_collection.find_one({'group_id': group_id})
-    if group is None:
-        new_group = {
-            'group_id': group_id,
-            'group_name': None,
-            'message_count': 0
-        }
-        groups_collection.insert_one(new_group)
-        return new_group
-    return group
+def get_user_rank(user_id):
+    user = get_user_data(user_id)
+    user_coins = user['coins']
 
-def update_group_data(group_id, update_data):
-    groups_collection.update_one({'group_id': group_id}, {'$set': update_data})
+    # Count users with more coins than the current user
+    higher_ranked_users = users_collection.count_documents({'coins': {'$gt': user_coins}})
+    # Total users
+    total_users = users_collection.count_documents({})
 
-# /start command with inline button for developer link
+    # Rank is one more than the number of users with more coins (as rank 1 is the top player)
+    rank = higher_ranked_users + 1
+
+    # Find the user directly above the current user in rank (for "next rank" calculation)
+    next_user = users_collection.find_one({'coins': {'$gt': user_coins}}, sort=[('coins', 1)])
+    if next_user:
+        coins_to_next_rank = next_user['coins'] - user_coins
+    else:
+        coins_to_next_rank = None  # User is already at the highest rank
+
+    return rank, total_users, coins_to_next_rank
+
+def get_character_data():
+    return list(characters_collection.find())
+
+def add_character(image_url, character_name, rarity):
+    character_id = characters_collection.count_documents({}) + 1
+    character = {
+        'id': character_id,
+        'image_url': image_url,
+        'character_name': character_name,
+        'rarity': rarity
+    }
+    characters_collection.insert_one(character)
+    return character
+
+def assign_rarity():
+    return random.choices(list(RARITY_LEVELS.keys()), weights=RARITY_WEIGHTS, k=1)[0]
+
+def fetch_new_character():
+    characters = get_character_data()
+    if characters:
+        return random.choice(characters)
+    return None
+
+def send_character(chat_id):
+    global current_character
+    current_character = fetch_new_character()
+    if current_character:
+        rarity = RARITY_LEVELS[current_character['rarity']]
+        caption = (
+            f"🎨 Guess the Anime Character!\n\n"
+            f"💬 Name: ???\n"
+            f"⚔️ Rarity: {rarity} {current_character['rarity']}\n"
+        )
+        bot.send_photo(chat_id, current_character['image_url'], caption=caption)
+
+def is_owner_or_sudo(user_id):
+    return user_id == BOT_OWNER_ID or user_id in SUDO_USERS
+
+# Command Handlers
+
 @bot.message_handler(commands=['start'])
-def start_command(message):
+def send_welcome(message):
+    user_id = message.from_user.id
+    user = get_user_data(user_id)
+    
+    if not user['profile']:
+        profile_name = message.from_user.full_name
+        update_user_data(user_id, {'profile': profile_name})
+
     welcome_message = """
 <b>🝮︎︎︎︎︎︎︎ Welcome to Pʜɪʟᴏ 🝮︎︎︎︎︎︎︎ Gʀᴀʙʙᴇʀ 🝮︎︎︎︎︎︎︎</b>
 
@@ -84,16 +135,14 @@ def start_command(message):
 """
     # Creating an inline button for developer link
     markup = InlineKeyboardMarkup()
-    developer_button = InlineKeyboardButton(text="Incline Developer", url="https://t.me/FlashShine")
+    developer_button = InlineKeyboardButton(text="Developer - @TechPiro", url="https://t.me/TechPiro")
     markup.add(developer_button)
 
     bot.send_message(message.chat.id, welcome_message, parse_mode='HTML', reply_markup=markup)
-    show_help(message)
 
-# /help command to show available commands in a structured order
 @bot.message_handler(commands=['help'])
 def show_help(message):
-    help_text = """
+    help_message = """
 <b>📜 🝮︎︎︎︎︎︎︎ Available Commands 🝮︎︎︎︎︎︎︎ 📜</b>
 
 🎮 <b>Character Commands:</b>
@@ -114,187 +163,47 @@ def show_help(message):
 
 🝮︎︎︎︎︎︎︎ Have fun and start collecting! 🝮︎︎︎︎︎︎︎
 """
-    bot.reply_to(message, help_text, parse_mode='HTML')
+    bot.reply_to(message, help_message, parse_mode='HTML')
 
-# /bonus command to claim daily bonus and send reminder for next claim
-@bot.message_handler(commands=['bonus'])
-def claim_bonus(message):
-    user_id = message.from_user.id
-    user = get_user_data(user_id)
-    
-    last_bonus_time = user.get('last_bonus')
-    now = datetime.now()
+# /gift command to send coins to another user by tagging them
+@bot.message_handler(commands=['gift'])
+def gift_coins(message):
+    sender_id = message.from_user.id
+    sender = get_user_data(sender_id)
 
-    if last_bonus_time is not None:
-        last_bonus_time = datetime.strptime(last_bonus_time, '%Y-%m-%d %H:%M:%S')
-        if now - last_bonus_time < BONUS_INTERVAL:
-            remaining_time = BONUS_INTERVAL - (now - last_bonus_time)
-            hours, remainder = divmod(remaining_time.seconds, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            bot.reply_to(message, f"⏳ You can claim your next bonus in {hours} hours, {minutes} minutes.")
-            return
-
-    # Grant the bonus
-    user['coins'] += BONUS_COINS
-    user['last_bonus'] = now.strftime('%Y-%m-%d %H:%M:%S')
-    update_user_data(user_id, user)
-
-    # Reminder for the next bonus claim after 24 hours
-    Timer(REMINDER_INTERVAL, lambda: bot.send_message(user_id, "🝮︎︎︎︎︎︎︎ 💡 Time to claim your bonus again!")).start()
-    
-    bot.reply_to(message, f"🎁 You've claimed your daily bonus of {BONUS_COINS} coins! 🝮︎︎︎︎︎︎︎")
-
-# Fix character fetching and sending
-def send_character(chat_id):
-    global current_character
-    current_character = fetch_new_character()
-    if current_character:
-        rarity = current_character['rarity']
-        caption = (
-            f"🎨 Guess the Anime Character!\n\n"
-            f"💬 Name: ???\n"
-            f"⚔️ Rarity: {rarity}\n"
-        )
-        try:
-            bot.send_photo(chat_id, current_character['image_url'], caption=caption)
-        except Exception as e:
-            print(f"Error sending character image: {e}")
-            bot.send_message(chat_id, "❌ Unable to send character image.")
-
-# Fetch a new character from the database
-def fetch_new_character():
-    characters = get_character_data()
-    if characters:
-        return random.choice(characters)
-    return None
-
-def get_character_data():
-    return list(characters_collection.find())
-
-# /leaderboard command to show top users by coins
-@bot.message_handler(commands=['leaderboard'])
-def leaderboard(message):
-    top_users = users_collection.find().sort("coins", -1).limit(10)
-    leaderboard_message = "<b>🏆 🝮︎︎︎︎︎︎︎ Top 10 Users by Coins 🝮︎︎︎︎︎︎︎ 🏆</b>\n\n"
-
-    for index, user in enumerate(top_users, start=1):
-        profile_name = user.get('profile', 'Unknown User')
-        telegram_username = user.get('username', None)
-
-        if telegram_username:
-            profile_mention = f"[{profile_name}](tg://user?id={user['user_id']})"
-        else:
-            profile_mention = profile_name
-
-        leaderboard_message += f"{index}. {profile_mention} — {user['coins']} coins 🝮︎︎︎︎︎︎︎\n"
-
-    bot.reply_to(message, leaderboard_message, parse_mode='Markdown')
-
-# /topcoins command to show users with the most coins earned today
-@bot.message_handler(commands=['topcoins'])
-def topcoins(message):
-    start_of_day = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-    top_users_today = users_collection.find({"last_bonus": {"$gte": start_of_day.strftime('%Y-%m-%d %H:%M:%S')}}).sort("coins", -1).limit(10)
-
-    topcoins_message = "<b>🌟 🝮︎︎︎︎︎︎︎ Top 10 Users by Coins Earned Today 🝮︎︎︎︎︎︎︎ 🌟</b>\n\n"
-
-    for index, user in enumerate(top_users_today, start=1):
-        profile_name = user.get('profile', 'Unknown User')
-        telegram_username = user.get('username', None)
-
-        if telegram_username:
-            profile_mention = f"[{profile_name}](tg://user?id={user['user_id']})"
-        else:
-            profile_mention = profile_name
-
-        topcoins_message += f"{index}. {profile_mention} — {user['coins']} coins 🝮︎︎︎︎︎︎︎\n"
-
-    bot.reply_to(message, topcoins_message, parse_mode='Markdown')
-
-# /profile command to show user's rank, total users, and personal stats
-@bot.message_handler(commands=['profile'])
-def show_profile(message):
-    user_id = message.from_user.id
-    user = get_user_data(user_id)
-
-    if not user:
-        bot.reply_to(message, "❌ User not found.")
+    # Validate the command format
+    if len(message.text.split()) < 2 or not message.reply_to_message:
+        bot.reply_to(message, "❌ Invalid format. Use `/gift <amount>` and tag a user.")
         return
 
-    streak = user.get('streak', 0)
-    coins = user.get('coins', 0)
-    correct_guesses = user.get('correct_guesses', 0)
+    try:
+        amount = int(message.text.split()[1])
+    except ValueError:
+        bot.reply_to(message, "❌ The amount must be a number.")
+        return
 
-    total_users = users_collection.count_documents({})
+    # Ensure the sender has enough coins
+    if sender['coins'] < amount:
+        bot.reply_to(message, "❌ You don't have enough coins to gift.")
+        return
 
-    # Rank the user based on their coins
-    rank = users_collection.count_documents({"coins": {"$gt": coins}}) + 1
+    # Ensure a user is tagged (recipient)
+    if not message.reply_to_message.from_user:
+        bot.reply_to(message, "❌ You need to tag a user to send coins.")
+        return
 
-    profile_message = f"""
-<b>📊 🝮︎︎︎︎︎︎︎ Your Profile 🝮︎︎︎︎︎︎︎:</b>
-- 💰 Coins: {coins}
-- 🔥 Streak: {streak}
-- 🎯 Correct Guesses: {correct_guesses}
-- 🏅 Rank: {rank} / {total_users} users 🝮︎︎︎︎︎︎︎
-"""
-    bot.reply_to(message, profile_message, parse_mode='HTML')
+    recipient_id = message.reply_to_message.from_user.id
+    recipient = get_user_data(recipient_id)
 
-# /stats command to show bot's stats (total users, characters, groups, etc.)
-@bot.message_handler(commands=['stats'])
-def show_stats(message):
-    total_users = users_collection.count_documents({})
-    total_characters = characters_collection.count_documents({})
-    total_groups = groups_collection.count_documents({})
+    # Transfer coins
+    sender_new_coins = sender['coins'] - amount
+    recipient_new_coins = recipient['coins'] + amount
+    update_user_data(sender_id, {'coins': sender_new_coins})
+    update_user_data(recipient_id, {'coins': recipient_new_coins})
 
-    stats_message = f"""
-<b>📊 🝮︎︎︎︎︎︎︎ Bot Stats 🝮︎︎︎︎︎︎︎:</b>
-- 🧑‍🤝‍🧑 Total Users: {total_users}
-- 🎎 Total Characters: {total_characters}
-- 👥 Total Groups: {total_groups}
-"""
-    bot.reply_to(message, stats_message, parse_mode='HTML')
-
-# Handle all types of messages and increment the message counter
-@bot.message_handler(func=lambda message: True)
-def handle_all_messages(message):
-    global global_message_count
-    chat_id = message.chat.id
-    user_id = message.from_user.id
-
-    if message.chat.type in ['group', 'supergroup']:
-        group_data = get_group_data(chat_id)
-        new_message_count = group_data['message_count'] + 1
-        update_group_data(chat_id, {'message_count': new_message_count})
-
-    user_guess = message.text.strip().lower() if message.text else ""
-
-    global_message_count += 1
-
-    if global_message_count >= MESSAGE_THRESHOLD:
-        send_character(chat_id)
-        global_message_count = 0
-
-    if current_character and user_guess:
-        character_name = current_character['character_name'].strip().lower()
-        if user_guess in character_name:
-            user = get_user_data(user_id)
-            new_coins = user['coins'] + COINS_PER_GUESS
-            user['correct_guesses'] += 1
-            user['streak'] += 1
-            streak_bonus = STREAK_BONUS_COINS * user['streak']
-            update_user_data(user_id, {
-                'coins': new_coins + streak_bonus,
-                'correct_guesses': user['correct_guesses'],
-                'streak': user['streak'],
-                'inventory': user['inventory'] + [current_character]
-            })
-            bot.reply_to(message, f"🎉 Congratulations! You guessed correctly and earned {COINS_PER_GUESS} coins! 🝮︎︎︎︎︎︎︎\n"
-                                  f"🔥 Streak Bonus: {streak_bonus} coins for a {user['streak']}-guess streak! 🝮︎︎︎︎︎︎︎")
-            send_character(chat_id)
-        else:
-            update_user_data(user_id, {'streak': 0})
+    # Send confirmation messages
+    bot.reply_to(message, f"🎁 You have successfully gifted {amount} coins to {message.reply_to_message.from_user.first_name}!")
+    bot.send_message(recipient_id, f"🎉 You have received {amount} coins from {message.from_user.first_name}!")
 
 # Start polling the bot
-print("🝮︎︎︎︎︎︎︎ Bot is running... 🝮︎︎︎︎︎︎︎")
-bot.infinity_polling(timeout=10, long_polling_timeout=5)
-            
+bot.infinity_polling(timeout=60, long_polling_timeout=60)
