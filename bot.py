@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Replace with your actual bot API token and Telegram channel ID
-API_TOKEN = "7825167784:AAHnif2V6AVg6BTcqWlG_JXxtw_1VFOGXF4"
+API_TOKEN = "7825167784:AAERTUGH7iF67zhaMCSynHktBXS0sbqvWMA"
 BOT_OWNER_ID = 7222795580  # Replace with the owner’s Telegram ID
 CHANNEL_ID = -1002438449944  # Replace with your Telegram channel ID where characters are logged
 
@@ -14,6 +14,7 @@ client = MongoClient(MONGO_URI)
 db = client['philo_grabber']  # Database name
 users_collection = db['users']  # Collection for user data
 characters_collection = db['characters']  # Collection for character data
+groups_collection = db['groups']  # Collection for group stats (for /stats)
 
 # List of sudo users (user IDs)
 SUDO_USERS = [7222795580, 6180999156]  # Add user IDs of sudo users here
@@ -164,6 +165,25 @@ def show_help(message):
 🝮︎︎︎︎︎︎︎ Have fun and start collecting! 🝮︎︎︎︎︎︎︎
 """
     bot.reply_to(message, help_message, parse_mode='HTML')
+
+# /stats command to show bot stats
+@bot.message_handler(commands=['stats'])
+def show_stats(message):
+    if message.from_user.id != BOT_OWNER_ID:
+        bot.reply_to(message, "❌ You are not authorized to view this information.")
+        return
+
+    total_users = users_collection.count_documents({})
+    total_characters = characters_collection.count_documents({})
+    total_groups = groups_collection.count_documents({})
+
+    stats_message = f"""
+<b>📊 🝮︎︎︎︎︎︎︎ Bot Stats 🝮︎︎︎︎︎︎︎:</b>
+- 🧑‍🤝‍🧑 Total Users: {total_users}
+- 🎎 Total Characters: {total_characters}
+- 👥 Total Groups: {total_groups}
+"""
+    bot.reply_to(message, stats_message, parse_mode='HTML')
 
 # /gift command to send coins to another user by tagging them
 @bot.message_handler(commands=['gift'])
