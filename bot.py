@@ -1,20 +1,25 @@
 import telebot
-from pymongo import MongoClient
+from pymongo import MongoClient, errors
 from datetime import datetime, timedelta
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Replace with your actual bot API token and Telegram channel ID
-API_TOKEN = "7825167784:AAERTUGH7iF67zhaMCSynHktBXS0sbqvWMA"
+API_TOKEN = "7825167784:AAFsZVCBzL2_mlNEjk5EcUzVtgKKfNEBXUk"
 BOT_OWNER_ID = 7222795580  # Replace with the owner’s Telegram ID
 CHANNEL_ID = -1002438449944  # Replace with your Telegram channel ID where characters are logged
 
 # MongoDB Connection
-MONGO_URI = "mongodb+srv://PhiloWise:Philo@waifu.yl9tohm.mongodb.net/?retryWrites=true&w=majority&appName=Waifu"
-client = MongoClient(MONGO_URI)
-db = client['philo_grabber']  # Database name
-users_collection = db['users']  # Collection for user data
-characters_collection = db['characters']  # Collection for character data
-groups_collection = db['groups']  # Collection for group stats (for /stats)
+try:
+    MONGO_URI = "mongodb+srv://PhiloWise:Philo@waifu.yl9tohm.mongodb.net/?retryWrites=true&w=majority&appName=Waifu"
+    client = MongoClient(MONGO_URI)
+    db = client['philo_grabber']  # Database name
+    users_collection = db['users']  # Collection for user data
+    characters_collection = db['characters']  # Collection for character data
+    groups_collection = db['groups']  # Collection for group stats (for /stats)
+    print("🝮︎︎︎ Connected to MongoDB 🝮︎︎︎")
+except errors.ServerSelectionTimeoutError as err:
+    print(f"Error: Could not connect to MongoDB: {err}")
+    exit()
 
 # List of sudo users (user IDs)
 SUDO_USERS = [7222795580, 6180999156]  # Add user IDs of sudo users here
@@ -92,6 +97,9 @@ def add_character(image_url, character_name, rarity):
     characters_collection.insert_one(character)
     return character
 
+def delete_character(character_id):
+    return characters_collection.delete_one({'id': character_id})
+
 def assign_rarity():
     return random.choices(list(RARITY_LEVELS.keys()), weights=RARITY_WEIGHTS, k=1)[0]
 
@@ -160,6 +168,8 @@ def show_help(message):
 /stats - Show the bot's stats (total users, characters, groups) 🝮︎︎︎︎︎︎︎
 
 ℹ️ <b>Miscellaneous:</b>
+/upload - Upload a new character (Sudo only) 🝮︎︎︎︎︎︎︎
+/delete - Delete a character by ID (Sudo only) 🝮︎︎︎︎︎︎︎
 /help - Show this help message 🝮︎︎︎︎︎︎︎
 
 🝮︎︎︎︎︎︎︎ Have fun and start collecting! 🝮︎︎︎︎︎︎︎
@@ -185,45 +195,122 @@ def show_stats(message):
 """
     bot.reply_to(message, stats_message, parse_mode='HTML')
 
-# /gift command to send coins to another user by tagging them
-@bot.message_handler(commands=['gift'])
-def gift_coins(message):
-    sender_id = message.from_user.id
-    sender = get_user_data(sender_id)
+# /upload command for sudo users to add new characters
+@bot.message_handler(commands=['upload'])
+def upload_character(message):
+    if not is_owner_or_sudo(message.from_user.id):
+        bot.reply_to(message, "❌ You are not authorized to upload characters.")
+        return
 
-    # Validate the command format
-    if len(message.text.split()) < 2 or not message.reply_to_message:
-        bot.reply_to(message, "❌ Invalid format. Use `/gift <amount>` and tag a user.")
+    # Parse command text for image URL and character name
+    try:
+        _, image_url, character_name = message.text.split(maxsplit=2)
+    except ValueError:
+        bot.reply_to(message, "❌ Invalid format. Use `/upload <image_url> <character_name>`")
+        return
+
+    # Assign a random rarity
+    rarity = assign_rarity()
+
+    # Add character to the database
+    character = add_character(image_url, character_name, rarity)
+    bot.reply_to(message, f"✅ Character '{character_name}' uploaded successfully with rarity {RARITY_LEVELS[rarity]}!")
+    bot.send_message(CHANNEL_ID, f"New character uploaded: {character_name} (ID: {character['id']}, {RARITY_LEVELS[rarity]} {rarity})")
+
+# /delete command for sudo users to remove a character by ID
+@bot.message_handler(commands=['delete'])
+def delete_character_command(message):
+    if not is_owner_or_sudo(message.from_user.id):
+        bot.reply_to(message, "❌ You are not authorized to delete characters.")
         return
 
     try:
-        amount = int(message.text.split()[1])
-    except ValueError:
-        bot.reply_to(message, "❌ The amount must be a number.")
+        _, character_id_str = message.text.split(maxsplit=1)
+        character_id = int(character_id_str)
+    except (ValueError, IndexError):
+        bot.reply_to(message, "❌ Invalid format. Use `/delete <character_id>`.")
         return
 
-    # Ensure the sender has enough coins
-    if sender['coins'] < amount:
-        bot.reply_to(message, "❌ You don't have enough coins to gift.")
+    result = delete_character(character_id)
+
+    if result.deleted_count > 0:
+        bot.reply_to(message, f"✅ Character with ID {character_id} has been successfully deleted.")
+    else:
+        bot.reply_to(message, f"❌ Character with ID {character_id} not found.")
+
+# /bonus command to claim daily bonus
+@bot.message_handler(commands=['bonus'])
+def claim_bonus(message):
+    user_id = message.from_user.id
+    user = get_user_data(user_id)
+    now = datetime.now()
+
+    if user['last_bonus'] and now - datetime.fromisoformat(user['last_bonus']) < BONUS_INTERVAL:
+        next_claim = datetime.fromisoformat(user['last_bonus']) + BONUS_INTERVAL
+        remaining_time = next_claim - now
+        hours_left = remaining_time.seconds // 3600
+        minutes_left = (remaining_time.seconds % 3600) // 60
+        bot.reply_to(message, f"⏳ You can claim your next bonus in {hours_left} hours and {minutes_left} minutes.")
+    else:
+        new_coins = user['coins'] + BONUS_COINS
+        update_user_data(user_id, {'coins': new_coins, 'last_bonus': now.isoformat()})
+        bot.reply_to(message, f"🎉 You have received {BONUS_COINS} coins! 🪙")
+
+# /inventory command to show character inventory
+@bot.message_handler(commands=['inventory'])
+def show_inventory(message):
+    user_id = message.from_user.id
+    user = get_user_data(user_id)
+    inventory = user['inventory']
+
+    if not inventory:
+        bot.reply_to(message, "Your inventory is empty. Start guessing characters to collect them!")
+    else:
+        inventory_message = "🎒 **Your Character Inventory:**\n"
+        for character in inventory:
+            inventory_message += f"🔹 {RARITY_LEVELS[character['rarity']]} {character['rarity']} - {character['character_name']}\n"
+        bot.reply_to(message, inventory_message)
+
+# /profile command to show user's rank, total users, and personal stats
+@bot.message_handler(commands=['profile'])
+def show_profile(message):
+    user_id = message.from_user.id
+    user = get_user_data(user_id)
+
+    if not user:
+        bot.reply_to(message, "❌ User not found.")
         return
 
-    # Ensure a user is tagged (recipient)
-    if not message.reply_to_message.from_user:
-        bot.reply_to(message, "❌ You need to tag a user to send coins.")
-        return
+    # Get user rank, total users, and coins needed for next rank
+    rank, total_users, coins_to_next_rank = get_user_rank(user_id)
 
-    recipient_id = message.reply_to_message.from_user.id
-    recipient = get_user_data(recipient_id)
+    profile_message = (
+        f"📊 **Your Profile**:\n"
+        f"- 💰 Coins: {user['coins']}\n"
+        f"- 🔥 Streak: {user['streak']}\n"
+        f"- 🎯 Correct Guesses: {user['correct_guesses']}\n"
+        f"- 🏅 Rank: {rank} / {total_users} users\n"
+        f"- 📦 Inventory: {len(user['inventory'])} characters"
+    )
 
-    # Transfer coins
-    sender_new_coins = sender['coins'] - amount
-    recipient_new_coins = recipient['coins'] + amount
-    update_user_data(sender_id, {'coins': sender_new_coins})
-    update_user_data(recipient_id, {'coins': recipient_new_coins})
+    if coins_to_next_rank:
+        profile_message += f"\n🪙 You need {coins_to_next_rank} more coins to reach the next rank."
 
-    # Send confirmation messages
-    bot.reply_to(message, f"🎁 You have successfully gifted {amount} coins to {message.reply_to_message.from_user.first_name}!")
-    bot.send_message(recipient_id, f"🎉 You have received {amount} coins from {message.from_user.first_name}!")
+    bot.reply_to(message, profile_message)
+
+# /leaderboard command to show top users by coins
+@bot.message_handler(commands=['leaderboard'])
+def show_leaderboard(message):
+    users = users_collection.find().sort('coins', -1).limit(TOP_LEADERBOARD_LIMIT)
+
+    if not users:
+        bot.reply_to(message, "No users found in the leaderboard.")
+    else:
+        leaderboard_message = "🏆 **Top 10 Leaderboard**:\n\n"
+        for rank, user in enumerate(users, start=1):
+            leaderboard_message += f"{rank}. {user['profile']} - {user['coins']} coins\n"
+
+        bot.send_message(message.chat.id, leaderboard_message)
 
 # Start polling the bot
 bot.infinity_polling(timeout=60, long_polling_timeout=60)
